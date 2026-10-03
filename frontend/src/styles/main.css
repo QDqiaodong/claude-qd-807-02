@@ -1,0 +1,378 @@
+:root {
+  --vc-primary: #01579b;
+  --vc-primary-soft: #e6eef5;
+  --vc-primary-deep: #013f70;
+  --vc-bg: #f2f6fa;
+  --vc-card: #ffffff;
+  --vc-border: #dbe4ec;
+  --vc-text: #1f2d3d;
+  --vc-muted: #7b8ca0;
+  --vc-pass: #1a9c5b;
+  --vc-fail: #d8342c;
+  --vc-warn: #e08b12;
+
+  --el-color-primary: #01579b;
+  --el-color-primary-light-3: #4d89b9;
+  --el-color-primary-light-5: #80abcd;
+  --el-color-primary-light-7: #b3cde1;
+  --el-color-primary-light-8: #cddde9;
+  --el-color-primary-light-9: #e6eef5;
+  --el-color-primary-dark-2: #01467c;
+  --el-border-radius-base: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--vc-bg);
+  color: var(--vc-text);
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+}
+
+/* ---------------- 整体骨架：顶部标题 + 内容区 + 底部流水线导航 ---------------- */
+.vc-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.vc-top {
+  flex: 0 0 auto;
+  height: 60px;
+  background: linear-gradient(90deg, #01579b 0%, #01467c 60%, #013f70 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+  gap: 18px;
+  box-shadow: 0 2px 10px rgba(1, 87, 155, 0.25);
+}
+
+.vc-brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.vc-brand-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.vc-brand-sub {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-top: 2px;
+}
+
+.vc-top-kpis {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.vc-kpi {
+  background: rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vc-kpi b {
+  font-size: 15px;
+}
+
+.vc-kpi.danger {
+  background: rgba(216, 52, 44, 0.85);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.vc-main {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 18px 22px;
+}
+
+/* ---------------- 底部固定流水线进度条导航 ---------------- */
+.vc-pipeline {
+  flex: 0 0 auto;
+  background: #fff;
+  border-top: 2px solid var(--vc-primary);
+  box-shadow: 0 -4px 16px rgba(15, 45, 75, 0.12);
+  display: flex;
+  align-items: stretch;
+  min-height: 104px;
+}
+
+.vc-pipe-track {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  padding: 0 18px;
+}
+
+.vc-pipe-line {
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  top: 52px;
+  height: 4px;
+  background: repeating-linear-gradient(90deg, #d3dfe9 0 12px, transparent 12px 20px);
+  border-radius: 2px;
+}
+
+.vc-pipe-line-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #01579b, #4d89b9);
+  border-radius: 2px;
+  transition: width 0.45s ease;
+}
+
+.vc-pipe-node {
+  flex: 1 1 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding-top: 14px;
+  user-select: none;
+}
+
+.vc-pipe-node:hover .vc-node-dot {
+  transform: scale(1.14);
+  box-shadow: 0 0 0 6px rgba(1, 87, 155, 0.12);
+}
+
+.vc-node-badge {
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #01579b;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.vc-node-badge.zero {
+  background: #c2cedb;
+}
+
+.vc-node-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #cfdae5;
+  color: #7b8ca0;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+}
+
+.vc-pipe-node.done .vc-node-dot {
+  border-color: var(--vc-pass);
+  color: var(--vc-pass);
+  background: #eaf7f0;
+}
+
+.vc-pipe-node.current .vc-node-dot {
+  border-color: var(--vc-primary);
+  color: #fff;
+  background: var(--vc-primary);
+  box-shadow: 0 0 0 5px rgba(1, 87, 155, 0.16);
+}
+
+.vc-pipe-node.fault .vc-node-dot {
+  border-color: var(--vc-fail);
+  color: var(--vc-fail);
+  background: #fdeceb;
+}
+
+.vc-node-name {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #42576d;
+}
+
+.vc-node-sub {
+  font-size: 11px;
+  color: var(--vc-muted);
+  margin-top: 1px;
+}
+
+/* 沿流水线移动的「当前车辆」胶囊 */
+.vc-pipe-capsule {
+  position: absolute;
+  top: 8px;
+  transform: translateX(-50%);
+  transition: left 0.55s cubic-bezier(0.34, 1.3, 0.64, 1);
+  background: linear-gradient(90deg, #01579b, #0277bd);
+  color: #fff;
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 14px rgba(1, 87, 155, 0.35);
+  z-index: 5;
+}
+
+.vc-pipe-capsule::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #0277bd;
+}
+
+.vc-pipe-capsule-idle {
+  color: #9fb0c2;
+  font-size: 12px;
+  margin-left: 8px;
+  align-self: flex-start;
+  margin-top: 12px;
+}
+
+/* 底部导航右侧的页面切换小胶囊 */
+.vc-pipe-views {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-left: 1px dashed var(--vc-border);
+}
+
+.vc-view-chip {
+  border: 1px solid var(--vc-border);
+  background: #f7fafc;
+  color: #42576d;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vc-view-chip:hover {
+  border-color: var(--vc-primary);
+  color: var(--vc-primary);
+}
+
+.vc-view-chip.active {
+  background: var(--vc-primary);
+  border-color: var(--vc-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.vc-view-chip {
+  position: relative;
+}
+
+.vc-view-badge {
+  font-style: normal;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--vc-fail);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(216, 52, 44, 0.5);
+}
+
+/* ---------------- 通用卡片 ---------------- */
+.vc-card {
+  background: var(--vc-card);
+  border: 1px solid var(--vc-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.vc-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--vc-primary-deep);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vc-card-title::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: var(--vc-primary);
+  border-radius: 2px;
+}
+
+.vc-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.vc-tag-pass {
+  color: var(--vc-pass);
+  font-weight: 600;
+}
+
+.vc-tag-fail {
+  color: var(--vc-fail);
+  font-weight: 600;
+}
+
+.vc-muted {
+  color: var(--vc-muted);
+}
+
+.vc-mono {
+  font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
+}
