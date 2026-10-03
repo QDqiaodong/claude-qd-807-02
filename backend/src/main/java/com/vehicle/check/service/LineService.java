@@ -44,9 +44,25 @@ public class LineService {
     }
 
     /**
-     * 底部流水线导航：默认取第一条运行中的检测线的 7 个工位，并带排队车辆数徽章
+     * 底部流水线导航（默认线路）：无当前任务时取第一条运行中的检测线的工位，
+     * 与单线路使用方式保持一致。
      */
     public List<StationVO> pipeline() {
+        return pipeline(null);
+    }
+
+    /**
+     * 底部流水线导航：
+     * - 指定 lineId（来自当前任务 / 刷新后恢复的最近线路）时，无论线路运行与否都按该线取工位，
+     *   保证「选中任务 → 导航节点 → 录入弹窗」始终同属任务所在线路，定时刷新与任务结束后也不错配；
+     * - 未指定 lineId 时回退默认：第一条运行中的检测线（单线路场景行为不变）。
+     */
+    public List<StationVO> pipeline(Long lineId) {
+        if (lineId != null) {
+            Line line = lineRepository.findById(lineId)
+                    .orElseThrow(() -> new BizException("检测线不存在：id=" + lineId));
+            return stationsOfLine(line.getId());
+        }
         List<Line> lines = lineRepository.findByStatus("RUNNING");
         if (lines.isEmpty()) {
             throw new BizException("暂无运行中的检测线，请先启用一条检测线");

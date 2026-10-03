@@ -261,6 +261,7 @@ import {
   fetchDrivers,
   fetchAllStations
 } from '../api'
+import { NODE_REJECT_MESSAGES } from '../composables/lineSync'
 import router from '../router'
 
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
@@ -272,7 +273,16 @@ const CHASSIS_OPTIONS = [
   '轮胎花纹深度不足'
 ]
 
-const { moveCapsule, activeStation, clearStation } = inject('pipeline')
+// 底部导航线路同步：节点/胶囊/弹窗都以当前任务线路为准（见 composables/lineSync）
+const {
+  state,
+  restored,
+  bindTask,
+  resyncTask,
+  reloadStations,
+  inspectNode,
+  clearPendingNode
+} = inject('pipeline')
 
 const tasks = ref([])
 const vehicles = ref([])
@@ -324,7 +334,14 @@ const vehicleForm = reactive({
 })
 
 const currentStation = computed(() =>
-  current.value ? { id: current.value.currentStationId, stationType: current.value.currentStationType, stationName: current.value.currentStationName } : null
+  current.value
+    ? {
+        id: current.value.currentStationId,
+        lineId: current.value.lineId,
+        stationType: current.value.currentStationType,
+        stationName: current.value.currentStationName
+      }
+    : null
 )
 
 const previewPass = computed(() => {
@@ -342,11 +359,18 @@ const previewPass = computed(() => {
   }
 })
 
-// 点击底部流水线节点 → 弹出该工位录入表
-watch(activeStation, (node) => {
-  if (!node) return
+// 点击底部流水线节点 → 闸门校验（必须当前线路 + 当前工位）→ 弹出该工位录入表。
+// watch pendingNonce：同一节点重复点击、跨页跳转挂载都能重新触发。
+watch(() => state.pendingNonce, (nonce) => {
+  if (!nonce || !state.pendingNode) return
+  const { node } = state.pendingNode
+  clearPendingNode()
   openStation(node)
-  clearStation()
+})
+
+// 定时刷新 tick：重拉当前任务对齐最新工位；换线（转线）重载节点；结束则离开在检队列、保留最近线路
+watch(() => state.resyncNonce, () => {
+  if (state.currentTask) backgroundResync()
 })
 
 async function loadAll () {
@@ -362,31 +386,68 @@ async function loadAll () {
 }
 
 async function selectTask (t) {
-  current.value = await fetchTask(t.id)
-  vehicle.value = await fetchVehicle(current.value.vehicleId)
-  moveCapsule(current.value.plateNo, current.value.currentSeqNo)
+  const detail = await fetchTask(t.id)
+  // 先把底部导航节点切到任务所属线路，成功后再绑定任务/胶囊，杜绝错线中间态
+  await bindTask(detail)
+  current.value = detail
+  vehicle.value = await fetchVehicle(detail.vehicleId)
 }
 
 async function refresh () {
   await loadAll()
   if (current.value) {
-    current.value = await fetchTask(current.value.id)
-    moveCapsule(current.value.plateNo, current.value.currentSeqNo)
+    const detail = await fetchTask(current.value.id)
+    const { ended } = await resyncTask(detail)
+    if (ended) {
+      // 任务刚好结束（合格/不合格）：离开在检队列，保留最近线路节点
+      current.value = null
+      vehicle.value = null
+      stationVisible.value = false
+    } else {
+      current.value = detail
+      vehicle.value = await fetchVehicle(detail.vehicleId)
+    }
+    await reloadStations()
   }
 }
 
+/**
+ * 打开工位录入弹窗：只允许当前线路上车辆当前所在工位。
+ * 底部节点、右上「录入检测值」按钮都走这道闸门，跨线工位不会再带出错误弹窗。
+ */
 function openStation (node) {
-  if (!current.value) {
-    ElMessage.warning('请先选择一辆在检车辆')
+  const verdict = inspectNode(node)
+  if (!verdict.allowed) {
+    ElMessage.warning(NODE_REJECT_MESSAGES[verdict.reason] || '当前不能录入该工位')
     return
   }
-  if (!node || !node.id) return
   stationForm.stationId = node.id
   stationForm.stationType = node.stationType
   stationForm.stationName = node.stationName
   stationForm.operatorName = node.stationName + '工位'
   stationForm.chassisDefects = []
   stationVisible.value = true
+}
+
+/** 8 秒定时刷新回调：只重拉当前任务详情，按最新状态对齐线路/胶囊，任务结束自动离队 */
+async function backgroundResync () {
+  const id = state.currentTask?.id
+  if (id == null) return
+  try {
+    const detail = await fetchTask(id)
+    const { ended } = await resyncTask(detail)
+    if (ended) {
+      // 总检提交后任务已 PASS/FAIL：离开在检队列，底部保留该线路与末位胶囊
+      current.value = null
+      vehicle.value = null
+      stationVisible.value = false
+      await loadAll()
+    } else {
+      current.value = detail
+    }
+  } catch (e) {
+    // 后台静默失败，不打断页面操作
+  }
 }
 
 async function submitStation () {
@@ -404,9 +465,16 @@ async function submitStation () {
       finalComment: stationForm.finalComment
     })
     stationVisible.value = false
-    ElMessage.success('已录入并推进到下一工位')
-    current.value = await fetchTask(updated.id)
-    moveCapsule(current.value.plateNo, current.value.currentSeqNo)
+    // 对齐最新线路与工位；若总检后任务已结束（PASS/FAIL），离开在检队列、保留最近线路节点
+    const { ended } = await resyncTask(updated)
+    if (ended) {
+      ElMessage.success('检测已完成，任务结论：' + updated.statusName)
+      current.value = null
+      vehicle.value = null
+    } else {
+      ElMessage.success('已录入并推进到下一工位')
+      current.value = updated
+    }
     await loadAll()
   } catch (e) {
     ElMessage.error(e.message)
@@ -461,8 +529,15 @@ async function submitVehicle () {
 
 onMounted(async () => {
   await loadAll()
-  if (tasks.value.length) {
-    await selectTask(tasks.value[0])
+  // 等 App 恢复完最近线路（或默认线）再自动选任务，避免父子挂载竞态导致节点先落错线；
+  // 单线路场景下恢复的就是唯一运行线，使用方式不变
+  await restored()
+  if (tasks.value.length && !current.value) {
+    try {
+      await selectTask(tasks.value[0])
+    } catch (e) {
+      ElMessage.error(e.message)
+    }
   }
 })
 </script>

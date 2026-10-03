@@ -18,7 +18,10 @@ http.interceptors.response.use(
 const unwrap = (p) => p.then((d) => d?.data)
 
 export const fetchLines = () => unwrap(http.get('/lines'))
-export const fetchPipeline = () => unwrap(http.get('/lines/stations/pipeline'))
+// 底部流水线导航：不传 lineId 取默认（第一条运行线）；选中任务/恢复最近线路时固定取该线，
+// 保证节点与当前任务同线，定时刷新与任务结束后都不错配
+export const fetchPipeline = (lineId) =>
+  unwrap(http.get('/lines/stations/pipeline', { params: { lineId } }))
 export const fetchAllStations = () => unwrap(http.get('/lines/stations'))
 export const fetchStationsOfLine = (id) => unwrap(http.get(`/lines/${id}/stations`))
 export const updateStationStatus = (id, status) =>

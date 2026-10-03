@@ -48,10 +48,13 @@ public class LineController {
         return ApiResponse.success(lineService.listAllStations());
     }
 
-    /** 底部流水线导航：默认线 7 个工位 + 排队数 */
+    /**
+     * 底部流水线导航：默认第一条运行线 7 个工位 + 排队数；
+     * 传 lineId 时固定返回该线（当前任务所属线路 / 刷新后恢复的最近线路），避免多线路下节点错配。
+     */
     @GetMapping("/stations/pipeline")
-    public ApiResponse<List<StationVO>> pipeline() {
-        return ApiResponse.success(lineService.pipeline());
+    public ApiResponse<List<StationVO>> pipeline(@RequestParam(required = false) Long lineId) {
+        return ApiResponse.success(lineService.pipeline(lineId));
     }
 
     /** 修改工位状态：空闲 / 占用 / 故障 */

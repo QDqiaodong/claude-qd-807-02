@@ -21,7 +21,7 @@
       <component :is="activeView" />
     </main>
 
-    <!-- 底部固定流水线进度条导航：常驻可见 -->
+    <!-- 底部固定流水线进度条导航：常驻可见，节点始终属于当前任务所在线路 -->
     <footer class="vc-pipeline">
       <div class="vc-pipe-track">
         <div class="vc-pipe-line">
@@ -29,23 +29,23 @@
         </div>
 
         <el-tooltip
-          v-if="capsule.plate"
-          :content="'当前车辆 ' + capsule.plate + ' · 第 ' + capsule.seq + ' 工位'"
+          v-if="state.capsule.plate"
+          :content="'当前车辆 ' + state.capsule.plate + ' · 第 ' + state.capsule.seq + ' 工位'"
           placement="top"
         >
           <div class="vc-pipe-capsule" :style="{ left: capsuleLeft }">
-            {{ capsule.plate }}
+            {{ state.capsule.plate }}
           </div>
         </el-tooltip>
         <span v-else class="vc-pipe-capsule-idle">未选择当前车辆</span>
 
         <div
-          v-for="(node, index) in stations"
+          v-for="(node, index) in state.stations"
           :key="node.id"
           class="vc-pipe-node"
           :class="{
-            done: capsule.seq > index + 1,
-            current: capsule.seq === index + 1,
+            done: state.capsule.seq > index + 1,
+            current: state.capsule.seq === index + 1,
             fault: node.status === 'FAULT'
           }"
           @click="onNodeClick(node)"
@@ -55,6 +55,20 @@
           <span class="vc-node-name">{{ node.stationName }}</span>
           <span class="vc-node-sub">{{ node.statusName }}</span>
         </div>
+      </div>
+
+      <div class="vc-pipe-meta">
+        <el-tooltip
+          :content="state.currentTask
+            ? '导航跟随当前任务「' + state.currentTask.plateNo + '」所在线路'
+            : '无在检任务，保留最近查看线路；选择任务后自动切换到其所属线路'"
+          placement="top"
+        >
+          <span class="vc-pipe-linetag">
+            导航线路 <b>{{ state.activeLineNo || '默认线' }}</b>
+            <i v-if="!state.currentTask" class="vc-pipe-linetag-sub">最近线路</i>
+          </span>
+        </el-tooltip>
       </div>
 
       <div class="vc-pipe-views">
@@ -84,6 +98,7 @@ import ReportView from './views/ReportView.vue'
 import ScheduleView from './views/ScheduleView.vue'
 import DeviceView from './views/DeviceView.vue'
 import { fetchPipeline, fetchOverview, fetchRecoveryBoard } from './api'
+import { createLineSync } from './composables/lineSync'
 
 const VIEW_MAP = {
   '/flow': FlowView,
@@ -104,43 +119,43 @@ const views = [
   { path: '/device', label: '设备标定' }
 ]
 
-const stations = ref([])
 const overview = ref({})
 const recoveryCount = ref(0)
 let pollTimer = null
 
-// 沿流水线移动的「当前车辆」胶囊
-const capsule = reactive({ plate: '', seq: 0 })
-// 点击流水线节点后交给流水线页面弹出该工位录入表
-const activeStation = ref(null)
+// 底部导航线路同步状态机：选中任务加载其线路节点；无任务保留最近线路；
+// 定时刷新 / 任务结束 / 跨线转线后节点都不错配；节点点击经闸门只录入当前线工位。
+// wrapState 传 reactive：状态机内部写入直接驱动模板更新
+const lineSync = createLineSync({ fetchStations: fetchPipeline, wrapState: reactive })
+const state = lineSync.state
 
 provide('pipeline', {
-  stations,
-  capsule,
-  activeStation,
-  moveCapsule (plate, seq) {
-    capsule.plate = plate
-    capsule.seq = seq
-  },
-  consumeStation (node) {
-    activeStation.value = node
-  },
-  clearStation () {
-    activeStation.value = null
-  },
+  state,
+  // FlowView 等页面只通过下列方法操作导航，避免直接改状态破坏不变量
+  restore: lineSync.restore,
+  restored: lineSync.restored,
+  switchLine: lineSync.switchLine,
+  bindTask: lineSync.bindTask,
+  resyncTask: lineSync.resyncTask,
+  clearCurrentTask: lineSync.clearCurrentTask,
+  reloadStations: lineSync.reloadStations,
+  inspectNode: lineSync.inspectNode,
+  requestNode: lineSync.requestNode,
+  clearPendingNode: lineSync.clearPendingNode,
+  kickResync: lineSync.kickResync,
   reloadAll: load
 })
 
 const capsuleLeft = computed(() => {
-  const total = stations.value.length || 7
-  const idx = Math.min(Math.max(capsule.seq - 1, 0), total - 1)
+  const total = state.stations.length || 7
+  const idx = Math.min(Math.max(state.capsule.seq - 1, 0), total - 1)
   return ((idx + 0.5) * 100) / total + '%'
 })
 
 const progressWidth = computed(() => {
-  const total = stations.value.length || 7
-  if (!capsule.seq || total < 2) return '0%'
-  return ((capsule.seq - 1) * 100) / (total - 1) + '%'
+  const total = state.stations.length || 7
+  if (!state.capsule.seq || total < 2) return '0%'
+  return ((state.capsule.seq - 1) * 100) / (total - 1) + '%'
 })
 
 router.afterEach((to) => {
@@ -152,30 +167,32 @@ function go (path) {
 }
 
 function onNodeClick (node) {
+  // 投递后延迟一拍置值，保证同一节点重复点击、跨页跳转挂载 FlowView 时 watch 都能触发
+  lineSync.clearPendingNode()
+  setTimeout(() => lineSync.requestNode(node), 30)
   if (currentPath.value !== '/flow') {
     router.push('/flow')
   }
-  consume(node)
 }
 
-function consume (node) {
-  activeStation.value = null
-  setTimeout(() => {
-    activeStation.value = node
-  }, 30)
-}
-
-async function load () {
+async function loadStations () {
+  // 只重刷当前线路节点（排队徽章 / 工位状态），activeLineId 与节点始终同线
   try {
-    stations.value = await fetchPipeline()
+    await lineSync.reloadStations()
   } catch (e) {
-    stations.value = []
+    // 当前线路被停用/删除等异常：节点保持上一次成功快照，不清空成别的线路
   }
+}
+
+async function loadOverview () {
   try {
     overview.value = await fetchOverview()
   } catch (e) {
     overview.value = {}
   }
+}
+
+async function loadRecovery () {
   try {
     const board = await fetchRecoveryBoard()
     recoveryCount.value = (board.affectedTasks || []).filter((t) => !t.resolved).length
@@ -184,9 +201,21 @@ async function load () {
   }
 }
 
-onMounted(() => {
+async function load () {
+  await Promise.all([loadStations(), loadOverview(), loadRecovery()])
+  // 定时刷新到点：通知 FlowView 按最新任务对齐胶囊 / 线路 / 结束状态
+  lineSync.kickResync()
+}
+
+onMounted(async () => {
   router.push(window.location.pathname || '/flow')
-  load()
+  // 先恢复最近线路（无则默认线），FlowView 挂载时 await restored() 再选任务，避免父子挂载竞态
+  try {
+    await lineSync.restore()
+  } catch (e) {
+    // 连默认线都不可用（无运行线）时首屏仍渲染，轮询会在恢复后补上节点
+  }
+  await load()
   // 跨线恢复涉及并发处置：底部工位占用、待处置数量每 8 秒自动刷新
   pollTimer = setInterval(load, 8000)
 })
@@ -195,3 +224,38 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
+
+<style scoped>
+.vc-pipe-meta {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 14px 0 6px;
+}
+
+.vc-pipe-linetag {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px dashed var(--vc-border);
+  border-radius: 8px;
+  background: #f4f9fd;
+  font-size: 12px;
+  color: var(--vc-muted);
+  white-space: nowrap;
+}
+
+.vc-pipe-linetag b {
+  font-size: 14px;
+  color: var(--vc-primary);
+  letter-spacing: 0.5px;
+}
+
+.vc-pipe-linetag-sub {
+  font-style: normal;
+  font-size: 10px;
+  color: #9fb0c2;
+}
+</style>
