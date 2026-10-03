@@ -29,6 +29,13 @@
         </div>
 
         <el-tooltip
+          :content="capsule.plate ? '导航线路与当前车辆所属检测线保持一致' : '未选择车辆时保留最近线路'"
+          placement="top"
+        >
+          <span class="vc-pipe-line-tag">{{ pipelineLineNo || '线路' }}</span>
+        </el-tooltip>
+
+        <el-tooltip
           v-if="capsule.plate"
           :content="'当前车辆 ' + capsule.plate + ' · 第 ' + capsule.seq + ' 工位'"
           placement="top"
@@ -109,18 +116,60 @@ const overview = ref({})
 const recoveryCount = ref(0)
 let pollTimer = null
 
+// 底部导航当前钉住的检测线：null = 默认第一条运行线。
+// 决策：没有当前任务时「保留最近线路」——任务结束或清空选中后导航不跳回默认线，
+// 定时刷新与手动刷新都停留在最近线路，保证页面连续；全新会话（尚未选过任务）仍是默认线，
+// 只有一条运行线时钉住的线就是默认线，单线路使用方式不变。
+const pipelineLineId = ref(null)
+
 // 沿流水线移动的「当前车辆」胶囊
 const capsule = reactive({ plate: '', seq: 0 })
 // 点击流水线节点后交给流水线页面弹出该工位录入表
 const activeStation = ref(null)
 
+// 底部导航当前展示线路的线号（取节点自带的 lineNo，无节点时为空）
+const pipelineLineNo = computed(() => stations.value[0]?.lineNo || '')
+
+// 单调递增序号：丢弃过期响应——8 秒轮询与选中任务换线并发时，
+// 旧线路的响应后返回也不得覆盖新线路节点
+let pipelineFetchSeq = 0
+
+async function refreshPipelineStations () {
+  const seq = ++pipelineFetchSeq
+  const lineId = pipelineLineId.value
+  try {
+    const result = await fetchPipeline(lineId)
+    if (seq === pipelineFetchSeq) stations.value = result
+  } catch (e) {
+    if (seq !== pipelineFetchSeq) return
+    if (lineId != null) {
+      // 钉住的线路可能已被删除或接口异常：回退默认线，避免底部导航长期空白
+      pipelineLineId.value = null
+      try {
+        stations.value = await fetchPipeline(null)
+      } catch (e2) {
+        stations.value = []
+      }
+    } else {
+      stations.value = []
+    }
+  }
+}
+
 provide('pipeline', {
   stations,
   capsule,
   activeStation,
+  pipelineLineId,
   moveCapsule (plate, seq) {
     capsule.plate = plate
     capsule.seq = seq
+  },
+  // 选中任务后由流水线页面调用：把底部导航钉到任务所属线路，节点立即跟随切换
+  async setPipelineLine (lineId) {
+    if (lineId == null || lineId === pipelineLineId.value) return
+    pipelineLineId.value = lineId
+    await refreshPipelineStations()
   },
   consumeStation (node) {
     activeStation.value = node
@@ -166,11 +215,8 @@ function consume (node) {
 }
 
 async function load () {
-  try {
-    stations.value = await fetchPipeline()
-  } catch (e) {
-    stations.value = []
-  }
+  // 钉住线路后，8 秒轮询与手动刷新都继续拉该线节点，不会跳回第一条运行线
+  await refreshPipelineStations()
   try {
     overview.value = await fetchOverview()
   } catch (e) {

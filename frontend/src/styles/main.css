@@ -135,6 +135,22 @@ body {
   padding: 0 18px;
 }
 
+/* 底部导航当前线路标签：多线并行时标明节点属于哪条检测线 */
+.vc-pipe-line-tag {
+  position: absolute;
+  left: 18px;
+  top: 8px;
+  z-index: 4;
+  padding: 2px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--vc-primary);
+  background: #eaf2fa;
+  color: var(--vc-primary-deep);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
 .vc-pipe-line {
   position: absolute;
   left: 40px;

@@ -54,6 +54,18 @@ public class LineService {
         return stationsOfLine(lines.get(0).getId());
     }
 
+    /**
+     * 底部流水线导航（指定检测线）：选中任务后底部节点必须属于任务所在线路。
+     * 指定 lineId 时不再回退到第一条运行线——即使该线已停用也照常返回其工位，
+     * 因为停用线上的在检任务仍允许继续录入工位检测值，节点必须与当前任务保持同线。
+     */
+    public List<StationVO> pipeline(Long lineId) {
+        if (lineId == null) {
+            return pipeline();
+        }
+        return stationsOfLine(lineId);
+    }
+
     public List<StationVO> stationsOfLine(Long lineId) {
         Line line = lineRepository.findById(lineId)
                 .orElseThrow(() -> new BizException("检测线不存在：id=" + lineId));

@@ -272,7 +272,7 @@ const CHASSIS_OPTIONS = [
   '轮胎花纹深度不足'
 ]
 
-const { moveCapsule, activeStation, clearStation } = inject('pipeline')
+const { moveCapsule, activeStation, clearStation, setPipelineLine, reloadAll } = inject('pipeline')
 
 const tasks = ref([])
 const vehicles = ref([])
@@ -364,6 +364,8 @@ async function loadAll () {
 async function selectTask (t) {
   current.value = await fetchTask(t.id)
   vehicle.value = await fetchVehicle(current.value.vehicleId)
+  // 底部导航节点必须跟随任务所属线路切换，否则点击节点会拿到别线工位
+  await setPipelineLine(current.value.lineId)
   moveCapsule(current.value.plateNo, current.value.currentSeqNo)
 }
 
@@ -371,6 +373,8 @@ async function refresh () {
   await loadAll()
   if (current.value) {
     current.value = await fetchTask(current.value.id)
+    // 任务可能刚被跨线处置迁到别的检测线：刷新时重新钉线，防止节点与当前任务错配
+    await setPipelineLine(current.value.lineId)
     moveCapsule(current.value.plateNo, current.value.currentSeqNo)
   }
 }
@@ -381,6 +385,12 @@ function openStation (node) {
     return
   }
   if (!node || !node.id) return
+  // 兜底防线：只允许录入当前任务所属线路的工位（正常时导航节点已与任务同线）
+  if (node.lineId != null && node.lineId !== current.value.lineId) {
+    ElMessage.warning('工位「' + node.stationName + '」属于 ' + (node.lineNo || '其他检测线')
+      + '，当前车辆在 ' + current.value.lineNo + '，只能录入当前线路工位')
+    return
+  }
   stationForm.stationId = node.id
   stationForm.stationType = node.stationType
   stationForm.stationName = node.stationName
@@ -408,6 +418,8 @@ async function submitStation () {
     current.value = await fetchTask(updated.id)
     moveCapsule(current.value.plateNo, current.value.currentSeqNo)
     await loadAll()
+    // 工位推进后排队/占用徽章立即刷新（钉住线路不变，节点仍与当前任务同线）
+    reloadAll?.()
   } catch (e) {
     ElMessage.error(e.message)
   }
